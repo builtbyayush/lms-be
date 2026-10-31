@@ -33,6 +33,7 @@ export const LEAD_FILTER_ALLOWLIST: Record<
   gstStatus: "stringExact",
   paymentInfoShared: "boolean",
   rating: "number",
+  contactAttempts: "number",
   createdBy: "objectId",
 };
 
@@ -92,15 +93,16 @@ export class LeadsService {
       .exec();
     await checkExisting(existingByRegex);
 
-    // Create new lead (only mobile is required; other fields optional)
+    // Create new lead (mobile + followUpDate required; other fields optional)
     const payload: Record<string, unknown> = {
       mobile: createLeadDto.mobile,
       createdBy: new Types.ObjectId(createdBy),
+      followUpDate: new Date(createLeadDto.followUpDate),
     };
     if (createLeadDto.influencerId) {
       payload.influencerId = new Types.ObjectId(createLeadDto.influencerId);
     }
-    ["name", "state", "city", "address", "pincode", "email", "sourceCode", "callStatus", "rating", "notes", "followUpDate", "converted", "gstStatus", "salesAmount", "paymentInfoShared"].forEach(
+    ["name", "state", "city", "address", "pincode", "email", "sourceCode", "callStatus", "rating", "notes", "converted", "gstStatus", "salesAmount", "paymentInfoShared", "contactAttempts"].forEach(
       (key) => {
         const v = (createLeadDto as any)[key];
         if (v !== undefined && v !== null) payload[key] = v;
@@ -133,6 +135,7 @@ export class LeadsService {
       rating,
       notes,
       followUpDate,
+      contactAttempts,
       converted,
       gstStatus,
       salesAmount,
@@ -154,6 +157,8 @@ export class LeadsService {
     if (notes !== undefined) update.notes = notes;
     if (followUpDate !== undefined)
       update.followUpDate = followUpDate ? new Date(followUpDate) : null;
+    if (contactAttempts !== undefined)
+      update.contactAttempts = Math.max(0, Math.floor(Number(contactAttempts)));
     if (converted !== undefined) {
       update.converted = converted;
       if (converted === true && !existing.conversionDate) {
@@ -229,7 +234,36 @@ export class LeadsService {
   }
 
   async findByMobile(mobile: string): Promise<LeadDocument | null> {
-    return this.leadModel.findOne({ mobile }).exec();
+    return this.findByMobileFlexible(mobile);
+  }
+
+  /** Match stored mobile across format variants (same rules as duplicate check on create). */
+  async findByMobileFlexible(mobile: string): Promise<LeadDocument | null> {
+    const inputNormalized = normalizeMobile(mobile);
+    if (inputNormalized.length < 10) {
+      return null;
+    }
+    const variants = [
+      inputNormalized,
+      `+91${inputNormalized}`,
+      `91${inputNormalized}`,
+      `0${inputNormalized}`,
+      mobile,
+    ].filter((v, i, a) => a.indexOf(v) === i);
+
+    for (const v of variants) {
+      const existing = await this.leadModel.findOne({ mobile: v }).exec();
+      if (existing) return existing;
+    }
+
+    const existingByRegex = await this.leadModel
+      .findOne({
+        mobile: new RegExp(
+          `${inputNormalized.replace(/([.*+?^${}()|[\]\\])/g, "\\$1")}\\s*$`,
+        ),
+      })
+      .exec();
+    return existingByRegex;
   }
 
   async findOne(id: string): Promise<LeadDocument | null> {

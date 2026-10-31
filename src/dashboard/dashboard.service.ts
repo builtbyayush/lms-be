@@ -230,8 +230,34 @@ export class DashboardService {
       if (endDate) saleMatch.saleDate.$lte = endDate;
     }
 
-    const { totalSales, totalRevenue, gstCustomers } =
+    let { totalSales, totalRevenue, gstCustomers } =
       await this.aggregateSaleKpisWithExistingLeads(saleMatch);
+
+    // When Sale collection is empty/out of sync, match legacy UI (converted leads + salesAmount).
+    if (totalSales === 0 && totalRevenue === 0 && !startDate && !endDate) {
+      const leadSaleFallback = await this.leadModel
+        .aggregate([
+          {
+            $match: {
+              $or: [{ converted: true }, { salesAmount: { $gt: 0 } }],
+            },
+          },
+          {
+            $group: {
+              _id: null,
+              totalSales: { $sum: 1 },
+              totalRevenue: { $sum: { $ifNull: ["$salesAmount", 0] } },
+            },
+          },
+        ])
+        .exec();
+      const row = leadSaleFallback[0];
+      if (row && (row.totalSales as number) > 0) {
+        totalSales = row.totalSales as number;
+        totalRevenue = (row.totalRevenue as number) ?? 0;
+      }
+    }
+
     const gstCustomersPercentage =
       totalSales > 0 ? (gstCustomers / totalSales) * 100 : 0;
 

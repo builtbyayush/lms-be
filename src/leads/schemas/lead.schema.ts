@@ -48,6 +48,10 @@ export class Lead {
   @Prop({ required: false })
   followUpDate?: Date;
 
+  /** Manual count of contact / follow-up attempts (employee updates on edit). */
+  @Prop({ default: 0, min: 0 })
+  contactAttempts?: number;
+
   @Prop({ default: false })
   converted: boolean;
 

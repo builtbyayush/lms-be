@@ -77,6 +77,10 @@ export function serializeLeadForClient(lead: LeadDocument | null): Record<
     rating: o.rating ?? null,
     notes: o.notes ?? "",
     followUpDate: dateToIsoOrNull(o.followUpDate),
+    contactAttempts:
+      typeof o.contactAttempts === "number" && o.contactAttempts >= 0
+        ? o.contactAttempts
+        : 0,
     converted: Boolean(o.converted),
     conversionDate: dateToIsoOrNull(o.conversionDate),
     gstStatus: o.gstStatus ?? "NO",

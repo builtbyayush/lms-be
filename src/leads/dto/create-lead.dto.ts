@@ -102,13 +102,23 @@ export class CreateLeadDto {
   @IsNotEmpty()
   notes: string;
 
-  @ApiPropertyOptional({
+  @ApiProperty({
     example: "2026-02-01T10:00:00Z",
-    description: "Follow-up date (ISO string)",
+    description: "Follow-up date (ISO string) — required when creating a lead",
   })
   @IsDateString()
+  @IsNotEmpty()
+  followUpDate: string;
+
+  @ApiPropertyOptional({
+    example: 0,
+    description: "Number of contact / follow-up attempts so far",
+    minimum: 0,
+  })
+  @IsNumber()
+  @Min(0)
   @IsOptional()
-  followUpDate?: string;
+  contactAttempts?: number;
 
   @ApiPropertyOptional({
     example: false,

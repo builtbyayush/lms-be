@@ -66,6 +66,12 @@ export class LeadResponseDto {
   followUpDate?: Date;
 
   @ApiPropertyOptional({
+    example: 0,
+    description: "Contact / follow-up attempts recorded for this lead",
+  })
+  contactAttempts?: number;
+
+  @ApiPropertyOptional({
     example: false,
     description: "Whether converted to sale",
   })

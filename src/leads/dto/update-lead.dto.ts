@@ -125,6 +125,16 @@ export class UpdateLeadDto {
   followUpDate?: string;
 
   @ApiPropertyOptional({
+    example: 2,
+    description: "Number of contact / follow-up attempts so far",
+    minimum: 0,
+  })
+  @IsNumber()
+  @Min(0)
+  @IsOptional()
+  contactAttempts?: number;
+
+  @ApiPropertyOptional({
     example: false,
     description: "Whether lead has been converted to sale",
   })
