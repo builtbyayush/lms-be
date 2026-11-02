@@ -1,4 +1,8 @@
-import { ConflictException, Injectable } from "@nestjs/common";
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
 import { Model } from "mongoose";
 import { Lead, LeadDocument } from "./schemas/lead.schema";
@@ -7,6 +11,11 @@ import { UpdateLeadDto } from "./dto/update-lead.dto";
 import { Types } from "mongoose";
 import { buildFilter } from "../common/utils/build-filter";
 import { Sale, SaleDocument } from "../sales/schemas/sale.schema";
+import {
+  LeadContactAttempt,
+  LeadContactAttemptDocument,
+} from "./schemas/lead-contact-attempt.schema";
+import { contactAttemptDayKey } from "./contact-attempt-day.util";
 
 /** Normalize mobile to last 10 digits for duplicate check (handles +91, 91, 0 prefix etc) */
 function normalizeMobile(mobile: string): string {
@@ -42,6 +51,8 @@ export class LeadsService {
   constructor(
     @InjectModel(Lead.name) private leadModel: Model<LeadDocument>,
     @InjectModel(Sale.name) private saleModel: Model<SaleDocument>,
+    @InjectModel(LeadContactAttempt.name)
+    private contactAttemptModel: Model<LeadContactAttemptDocument>,
   ) {}
 
   async createOrFind(
@@ -102,7 +113,7 @@ export class LeadsService {
     if (createLeadDto.influencerId) {
       payload.influencerId = new Types.ObjectId(createLeadDto.influencerId);
     }
-    ["name", "state", "city", "address", "pincode", "email", "sourceCode", "callStatus", "rating", "notes", "converted", "gstStatus", "salesAmount", "paymentInfoShared", "contactAttempts"].forEach(
+    ["name", "state", "city", "address", "pincode", "email", "sourceCode", "callStatus", "rating", "notes", "converted", "gstStatus", "salesAmount", "paymentInfoShared"].forEach(
       (key) => {
         const v = (createLeadDto as any)[key];
         if (v !== undefined && v !== null) payload[key] = v;
@@ -135,7 +146,6 @@ export class LeadsService {
       rating,
       notes,
       followUpDate,
-      contactAttempts,
       converted,
       gstStatus,
       salesAmount,
@@ -157,8 +167,6 @@ export class LeadsService {
     if (notes !== undefined) update.notes = notes;
     if (followUpDate !== undefined)
       update.followUpDate = followUpDate ? new Date(followUpDate) : null;
-    if (contactAttempts !== undefined)
-      update.contactAttempts = Math.max(0, Math.floor(Number(contactAttempts)));
     if (converted !== undefined) {
       update.converted = converted;
       if (converted === true && !existing.conversionDate) {
@@ -368,6 +376,75 @@ export class LeadsService {
     return this.leadModel
       .findByIdAndUpdate(leadId, { $set: set }, { new: true })
       .exec();
+  }
+
+  async hasUserLoggedContactAttemptToday(
+    leadId: string,
+    userId: string,
+  ): Promise<boolean> {
+    const dayKey = contactAttemptDayKey();
+    const row = await this.contactAttemptModel
+      .findOne({
+        leadId: new Types.ObjectId(leadId),
+        userId: new Types.ObjectId(userId),
+        dayKey,
+      })
+      .lean()
+      .exec();
+    return !!row;
+  }
+
+  /** Records exactly one contact attempt for this user today and increments the lead counter. */
+  async logContactAttempt(
+    leadId: string,
+    userId: string,
+  ): Promise<LeadDocument> {
+    const lead = await this.leadModel.findById(leadId).exec();
+    if (!lead) {
+      throw new NotFoundException("Lead not found");
+    }
+
+    const dayKey = contactAttemptDayKey();
+    const already = await this.contactAttemptModel
+      .findOne({
+        leadId: new Types.ObjectId(leadId),
+        userId: new Types.ObjectId(userId),
+        dayKey,
+      })
+      .exec();
+    if (already) {
+      throw new ConflictException(
+        "You have already logged a contact attempt for this lead today.",
+      );
+    }
+
+    try {
+      await this.contactAttemptModel.create({
+        leadId: new Types.ObjectId(leadId),
+        userId: new Types.ObjectId(userId),
+        dayKey,
+      });
+    } catch (err: unknown) {
+      const code = (err as { code?: number })?.code;
+      if (code === 11000) {
+        throw new ConflictException(
+          "You have already logged a contact attempt for this lead today.",
+        );
+      }
+      throw err;
+    }
+
+    const updated = await this.leadModel
+      .findByIdAndUpdate(
+        leadId,
+        { $inc: { contactAttempts: 1 } },
+        { new: true },
+      )
+      .exec();
+    if (!updated) {
+      throw new NotFoundException("Lead not found");
+    }
+    return updated;
   }
 
   /**

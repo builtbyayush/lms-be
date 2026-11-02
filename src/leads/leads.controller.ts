@@ -264,7 +264,13 @@ export class LeadsController {
         throw new NotFoundException("Lead not found");
       }
     }
-    return serializeLeadForClient(lead) as Record<string, unknown>;
+    const out = serializeLeadForClient(lead) as Record<string, unknown>;
+    out.contactAttemptLoggedToday =
+      await this.leadsService.hasUserLoggedContactAttemptToday(
+        String((lead as any)._id),
+        user.id,
+      );
+    return out;
   }
 
   @Get(":id")
@@ -298,7 +304,49 @@ export class LeadsController {
         throw new ForbiddenException("You do not have access to this lead");
       }
     }
-    return serializeLeadForClient(lead) as Record<string, unknown>;
+    const out = serializeLeadForClient(lead) as Record<string, unknown>;
+    out.contactAttemptLoggedToday =
+      await this.leadsService.hasUserLoggedContactAttemptToday(id, user.id);
+    return out;
+  }
+
+  @Post(":id/contact-attempts")
+  @ApiOperation({
+    summary: "Log one contact attempt for today",
+    description:
+      "Increments contactAttempts by 1. Each user may log at most one attempt per lead per calendar day (IST).",
+  })
+  @ApiParam({
+    name: "id",
+    description: "Lead ID (MongoDB ObjectId)",
+  })
+  @ApiResponse({
+    status: 201,
+    description: "Attempt logged",
+    type: LeadResponseDto,
+  })
+  @ApiResponse({
+    status: 409,
+    description: "Already logged an attempt for this lead today",
+  })
+  async logContactAttempt(
+    @Param("id", ParseMongoIdPipe) id: string,
+    @CurrentUser() user: { id: string; role: string },
+  ) {
+    const existing = await this.leadsService.findOne(id);
+    if (!existing) {
+      throw new NotFoundException("Lead not found");
+    }
+    if (user.role !== "ADMIN") {
+      const ownerId = (existing as any).createdBy?.toString?.();
+      if (String(ownerId) !== String(user?.id)) {
+        throw new ForbiddenException("You do not have access to this lead");
+      }
+    }
+    const lead = await this.leadsService.logContactAttempt(id, user.id);
+    const out = serializeLeadForClient(lead) as Record<string, unknown>;
+    out.contactAttemptLoggedToday = true;
+    return out;
   }
 
   @Post()
@@ -373,10 +421,16 @@ export class LeadsController {
         }
       }
     }
-    const lead = await this.leadsService.update(id, updateLeadDto);
-    return lead
-      ? (serializeLeadForClient(lead) as Record<string, unknown>)
-      : null;
+    const { contactAttempts: _drop, ...safeUpdate } = updateLeadDto as UpdateLeadDto & {
+      contactAttempts?: number;
+    };
+    void _drop;
+    const lead = await this.leadsService.update(id, safeUpdate);
+    if (!lead) return null;
+    const out = serializeLeadForClient(lead) as Record<string, unknown>;
+    out.contactAttemptLoggedToday =
+      await this.leadsService.hasUserLoggedContactAttemptToday(id, user.id);
+    return out;
   }
 
   @Delete(":id")

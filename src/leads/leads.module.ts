@@ -3,6 +3,10 @@ import { MongooseModule } from "@nestjs/mongoose";
 import { LeadsService } from "./leads.service";
 import { LeadsController } from "./leads.controller";
 import { Lead, LeadSchema } from "./schemas/lead.schema";
+import {
+  LeadContactAttempt,
+  LeadContactAttemptSchema,
+} from "./schemas/lead-contact-attempt.schema";
 import { Sale, SaleSchema } from "../sales/schemas/sale.schema";
 import { ReportingConversionDateBackfill } from "./reporting-conversion-date.backfill";
 
@@ -10,6 +14,7 @@ import { ReportingConversionDateBackfill } from "./reporting-conversion-date.bac
   imports: [
     MongooseModule.forFeature([
       { name: Lead.name, schema: LeadSchema },
+      { name: LeadContactAttempt.name, schema: LeadContactAttemptSchema },
       { name: Sale.name, schema: SaleSchema },
     ]),
   ],

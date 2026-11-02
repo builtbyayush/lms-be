@@ -73,6 +73,13 @@ export class LeadResponseDto {
 
   @ApiPropertyOptional({
     example: false,
+    description:
+      "True when the authenticated user has already logged a contact attempt for this lead today (IST)",
+  })
+  contactAttemptLoggedToday?: boolean;
+
+  @ApiPropertyOptional({
+    example: false,
     description: "Whether converted to sale",
   })
   converted?: boolean;
