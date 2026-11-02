@@ -1,4 +1,19 @@
-name: Build and Push Docker Image
+# Build lms-be, push iamcyberster/lms-be:latest to Docker Hub, then SSH to EC2 to pull and recreate lead-app.
+#
+# Required secrets (Settings → Secrets and variables → Actions):
+#   DOCKERHUB_USERNAME   — Docker Hub username (or set legacy DOCKER_USERNAME and map in login step)
+#   DOCKERHUB_TOKEN      — Docker Hub access token (or legacy DOCKER_PASSWORD)
+#   EC2_SSH_HOST         — EC2 public hostname or IP
+#   EC2_SSH_USER         — SSH user (e.g. ec2-user)
+#   EC2_SSH_PRIVATE_KEY  — Private key PEM (full BEGIN/END block)
+#
+# Optional:
+#   MONGODB_URI          — Docker build-arg; runtime uses .env on EC2
+#   EC2_APP_DIR          — Directory on EC2 with .env (default: /opt/lead-management)
+#
+# EC2: app dir must contain .env (default /opt/lead-management). See .github/workflows/README.md.
+
+name: Build and Deploy to EC2
 
 on:
   push:
@@ -11,18 +26,18 @@ on:
     branches:
       - main
       - master
-  workflow_dispatch: # Allows manual trigger from GitHub UI
+  workflow_dispatch:
 
 env:
   IMAGE_NAME: iamcyberster/lms-be
-  REGISTRY: docker.io
+  IMAGE_TAG: latest
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write
+      actions: write
 
     steps:
       - name: Checkout code
@@ -30,43 +45,71 @@ jobs:
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-        with:
-          driver-opts: |
-            image=moby/buildkit:latest
-            network=host
 
       - name: Log in to Docker Hub
         if: github.event_name != 'pull_request'
         uses: docker/login-action@v3
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Extract metadata (tags, labels)
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: ${{ env.IMAGE_NAME }}
-          tags: |
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=sha,prefix={{branch}}-
-            type=raw,value=latest,enable={{is_default_branch}}
+          username: ${{ secrets.DOCKERHUB_USERNAME || secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN || secrets.DOCKER_PASSWORD }}
 
       - name: Build and push Docker image (linux/amd64)
+        id: build
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64
           push: ${{ github.event_name != 'pull_request' }}
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          no-cache: true
+          tags: ${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
           build-args: |
             MONGODB_URI=${{ secrets.MONGODB_URI }}
             PORT=3000
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Image digest
+        if: github.event_name != 'pull_request'
         run: echo "Image pushed with digest ${{ steps.build.outputs.digest }}"
+
+  deploy-ec2:
+    needs: build-and-push
+    if: github.event_name != 'pull_request' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Pull on EC2 and recreate lead-app
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          IMAGE_NAME: ${{ env.IMAGE_NAME }}
+          IMAGE_TAG: ${{ env.IMAGE_TAG }}
+          EC2_APP_DIR: ${{ secrets.EC2_APP_DIR }}
+        with:
+          host: ${{ secrets.EC2_SSH_HOST }}
+          username: ${{ secrets.EC2_SSH_USER }}
+          key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+          envs: IMAGE_NAME,IMAGE_TAG,EC2_APP_DIR
+          script_stop: true
+          script: |
+            set -euo pipefail
+            APP_DIR="${EC2_APP_DIR:-/opt/lead-management}"
+            if [ ! -d "$APP_DIR" ]; then
+              echo "Deploy directory missing: $APP_DIR (set EC2_APP_DIR or create it on EC2)"
+              exit 1
+            fi
+            if [ ! -f "$APP_DIR/.env" ]; then
+              echo "Missing $APP_DIR/.env — add MONGODB_URI, JWT_SECRET, etc."
+              exit 1
+            fi
+            cd "$APP_DIR"
+            echo "Pulling ${IMAGE_NAME}:${IMAGE_TAG} from Docker Hub..."
+            docker pull "${IMAGE_NAME}:${IMAGE_TAG}"
+            echo "Recreating lead-app ..."
+            docker rm -f lead-app 2>/dev/null || true
+            docker run -d \
+              --name lead-app \
+              --env-file .env \
+              -p 3000:3000 \
+              --restart unless-stopped \
+              "${IMAGE_NAME}:${IMAGE_TAG}"
+            docker ps --filter name=lead-app
+            echo "Deploy complete."

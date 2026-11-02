@@ -1,57 +1,17 @@
 # GitHub Actions Workflows
 
-## Docker Build and Push
+## Build and Deploy to EC2
 
-The `docker-build-push.yml` workflow automatically builds and pushes Docker images to Docker Hub.
+File: **`docker-build-push.yml`**
 
-### Triggers
+1. Builds **`iamcyberster/lms-be:latest`** (amd64, GHA layer cache).
+2. Pushes to **Docker Hub**.
+3. SSHs to **EC2**, **`docker pull`**, recreates **`lead-app`**.
 
-- **Push to main/master**: Builds and pushes new image
-- **Tags (v*)**: Builds and pushes versioned image (e.g., `v1.0.0`)
-- **Pull Requests**: Builds image but doesn't push (for testing)
-- **Manual**: Can be triggered manually from GitHub Actions tab
+### Secrets
 
-### Required Secrets
+- **Hub:** `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN` (or `DOCKER_USERNAME`, `DOCKER_PASSWORD`)
+- **EC2:** `EC2_SSH_HOST`, `EC2_SSH_USER`, `EC2_SSH_PRIVATE_KEY`
+- **Optional:** `MONGODB_URI`, `EC2_APP_DIR`
 
-Add these secrets in GitHub repository settings (Settings → Secrets and variables → Actions):
-
-1. **DOCKER_USERNAME**: Your Docker Hub username
-2. **DOCKER_PASSWORD**: Your Docker Hub password or access token
-3. **MONGODB_URI**: (Optional) MongoDB connection string for build args
-
-### Image Tags
-
-Images are tagged with:
-- `latest` - Latest build from main/master branch
-- `main` or `master` - Branch name
-- `v1.0.0` - Semantic version from git tags
-- `main-abc1234` - Branch name + commit SHA
-
-### Multi-Architecture Support
-
-Builds for both:
-- `linux/amd64` (Intel/AMD servers)
-- `linux/arm64` (ARM servers, Apple Silicon)
-
-### Cache
-
-Uses Docker registry cache for faster builds:
-- Cache stored as: `iamcyberster/lms-be:buildcache`
-- Subsequent builds reuse cached layers
-
-### Setup Instructions
-
-1. Go to your GitHub repository
-2. Navigate to: **Settings → Secrets and variables → Actions**
-3. Add the following secrets:
-   - `DOCKER_USERNAME`: Your Docker Hub username
-   - `DOCKER_PASSWORD`: Your Docker Hub password/token
-   - `MONGODB_URI`: (Optional) Your MongoDB URI
-4. Push to main/master branch to trigger the workflow
-
-### Manual Trigger
-
-1. Go to **Actions** tab in GitHub
-2. Select **Build and Push Docker Image**
-3. Click **Run workflow**
-4. Select branch and click **Run workflow**
+On EC2, keep **`/opt/lead-management/.env`** (or set **`EC2_APP_DIR`**) with `MONGODB_URI`, `JWT_SECRET`, and other app env vars before the first deploy.
