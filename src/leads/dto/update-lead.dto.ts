@@ -8,8 +8,10 @@ import {
   IsNumber,
   IsBoolean,
   IsDateString,
+  IsNotEmpty,
   Min,
   Max,
+  ValidateIf,
 } from "class-validator";
 import { ApiPropertyOptional } from "@nestjs/swagger";
 
@@ -98,14 +100,15 @@ export class UpdateLeadDto {
 
   @ApiPropertyOptional({
     example: 4,
-    description: "Rating from 1 to 5",
+    description: "Rating from 1 to 5 (required when callStatus is set and not WRONG_NUMBER)",
     minimum: 1,
     maximum: 5,
   })
+  @ValidateIf((o) => o.callStatus != null && o.callStatus !== "WRONG_NUMBER")
   @IsNumber()
   @Min(1)
   @Max(5)
-  @IsOptional()
+  @IsNotEmpty()
   rating?: number;
 
   @ApiPropertyOptional({

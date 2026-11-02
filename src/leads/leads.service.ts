@@ -238,11 +238,54 @@ export class LeadsService {
   async remove(id: string): Promise<LeadDocument | null> {
     const oid = new Types.ObjectId(id);
     await this.saleModel.deleteMany({ leadId: oid }).exec();
+    await this.contactAttemptModel.deleteMany({ leadId: oid }).exec();
     return this.leadModel.findByIdAndDelete(id).exec();
+  }
+
+  async removeMany(ids: string[]): Promise<{ deletedCount: number }> {
+    const unique = [...new Set(ids.map((id) => String(id).trim()).filter(Boolean))];
+    if (!unique.length) return { deletedCount: 0 };
+    const oids = unique.map((id) => new Types.ObjectId(id));
+    await this.saleModel.deleteMany({ leadId: { $in: oids } }).exec();
+    await this.contactAttemptModel.deleteMany({ leadId: { $in: oids } }).exec();
+    const result = await this.leadModel.deleteMany({ _id: { $in: oids } }).exec();
+    return { deletedCount: result.deletedCount ?? 0 };
   }
 
   async findByMobile(mobile: string): Promise<LeadDocument | null> {
     return this.findByMobileFlexible(mobile);
+  }
+
+  /** Duplicate check for add-lead UI (does not expose other reps' lead details). */
+  async checkMobileForCreate(
+    mobile: string,
+    userId: string,
+    role: string,
+  ): Promise<{
+    status: "available" | "owned_by_self" | "owned_by_other";
+    leadId?: string;
+    leadName?: string;
+  }> {
+    const existing = await this.findByMobileFlexible(mobile);
+    if (!existing) {
+      return { status: "available" };
+    }
+    const ownerId = String((existing as any).createdBy ?? "");
+    const isOwner = ownerId === String(userId);
+    const leadId = String(existing._id);
+    const leadName = String((existing as any).name ?? "").trim() || undefined;
+
+    if (role === "ADMIN") {
+      return {
+        status: isOwner ? "owned_by_self" : "owned_by_other",
+        leadId,
+        leadName,
+      };
+    }
+    if (isOwner) {
+      return { status: "owned_by_self", leadId, leadName };
+    }
+    return { status: "owned_by_other" };
   }
 
   /** Match stored mobile across format variants (same rules as duplicate check on create). */

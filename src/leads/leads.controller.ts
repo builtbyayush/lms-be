@@ -23,6 +23,7 @@ import {
 import { LeadsService, LEAD_FILTER_ALLOWLIST } from "./leads.service";
 import { CreateLeadDto } from "./dto/create-lead.dto";
 import { UpdateLeadDto } from "./dto/update-lead.dto";
+import { BulkDeleteLeadsDto } from "./dto/bulk-delete-leads.dto";
 import { LeadResponseDto } from "./dto/lead-response.dto";
 import { JwtAuthGuard } from "../common/guards/jwt-auth.guard";
 import { CurrentUser } from "../common/decorators/current-user.decorator";
@@ -232,6 +233,25 @@ export class LeadsController {
     return serializeLeadsForClient(rows);
   }
 
+  @Get("check-mobile")
+  @ApiOperation({
+    summary: "Check if mobile is available for a new lead",
+    description:
+      "Returns available | owned_by_self (includes leadId) | owned_by_other (no lead details for non-admin).",
+  })
+  @ApiQuery({
+    name: "mobile",
+    required: true,
+    description: "Mobile number to check",
+  })
+  @ApiResponse({ status: 200, description: "Check result" })
+  async checkMobile(
+    @Query("mobile") mobile: string,
+    @CurrentUser() user: { id: string; role: string },
+  ) {
+    return this.leadsService.checkMobileForCreate(mobile, user.id, user.role);
+  }
+
   @Get("by-mobile")
   @ApiOperation({ summary: "Get lead by mobile number" })
   @ApiQuery({
@@ -431,6 +451,23 @@ export class LeadsController {
     out.contactAttemptLoggedToday =
       await this.leadsService.hasUserLoggedContactAttemptToday(id, user.id);
     return out;
+  }
+
+  @Post("bulk-delete")
+  @ApiOperation({
+    summary: "Delete multiple leads (admin only)",
+  })
+  @ApiBody({ type: BulkDeleteLeadsDto })
+  @ApiResponse({ status: 200, description: "Leads deleted" })
+  @ApiResponse({ status: 403, description: "Admin only" })
+  async bulkRemove(
+    @Body() dto: BulkDeleteLeadsDto,
+    @CurrentUser() user: { id: string; role: string },
+  ) {
+    if (user.role !== "ADMIN") {
+      throw new ForbiddenException("Only administrators can bulk-delete leads");
+    }
+    return this.leadsService.removeMany(dto.ids);
   }
 
   @Delete(":id")
