@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -165,8 +166,12 @@ export class LeadsService {
     if (callStatus !== undefined) update.callStatus = callStatus;
     if (rating !== undefined) update.rating = rating;
     if (notes !== undefined) update.notes = notes;
-    if (followUpDate !== undefined)
-      update.followUpDate = followUpDate ? new Date(followUpDate) : null;
+    if (followUpDate !== undefined) {
+      if (!followUpDate) {
+        throw new BadRequestException("Follow-up date cannot be removed");
+      }
+      update.followUpDate = new Date(followUpDate);
+    }
     if (converted !== undefined) {
       update.converted = converted;
       if (converted === true && !existing.conversionDate) {
