@@ -56,6 +56,9 @@ export class HttpExceptionFilter implements ExceptionFilter {
       if (msgObj.leadId !== undefined) {
         errorResponse.leadId = msgObj.leadId;
       }
+      if (msgObj.ownerName !== undefined) {
+        errorResponse.ownerName = msgObj.ownerName;
+      }
     } else {
       errorResponse.message = "Internal server error";
     }

@@ -237,7 +237,7 @@ export class LeadsController {
   @ApiOperation({
     summary: "Check if mobile is available for a new lead",
     description:
-      "Returns available | owned_by_self (includes leadId) | owned_by_other (no lead details for non-admin).",
+      "Returns available | owned_by_self (includes leadId) | owned_by_other (ownerName; no lead details for non-admin).",
   })
   @ApiQuery({
     name: "mobile",

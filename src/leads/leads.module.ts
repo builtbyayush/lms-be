@@ -8,6 +8,7 @@ import {
   LeadContactAttemptSchema,
 } from "./schemas/lead-contact-attempt.schema";
 import { Sale, SaleSchema } from "../sales/schemas/sale.schema";
+import { User, UserSchema } from "../users/schemas/user.schema";
 import { ReportingConversionDateBackfill } from "./reporting-conversion-date.backfill";
 
 @Module({
@@ -16,6 +17,7 @@ import { ReportingConversionDateBackfill } from "./reporting-conversion-date.bac
       { name: Lead.name, schema: LeadSchema },
       { name: LeadContactAttempt.name, schema: LeadContactAttemptSchema },
       { name: Sale.name, schema: SaleSchema },
+      { name: User.name, schema: UserSchema },
     ]),
   ],
   controllers: [LeadsController],

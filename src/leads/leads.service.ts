@@ -12,6 +12,7 @@ import { UpdateLeadDto } from "./dto/update-lead.dto";
 import { Types } from "mongoose";
 import { buildFilter } from "../common/utils/build-filter";
 import { Sale, SaleDocument } from "../sales/schemas/sale.schema";
+import { User, UserDocument } from "../users/schemas/user.schema";
 import {
   LeadContactAttempt,
   LeadContactAttemptDocument,
@@ -54,7 +55,22 @@ export class LeadsService {
     @InjectModel(Sale.name) private saleModel: Model<SaleDocument>,
     @InjectModel(LeadContactAttempt.name)
     private contactAttemptModel: Model<LeadContactAttemptDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
   ) {}
+
+  private otherOwnerDuplicateMessage(ownerName?: string): string {
+    if (ownerName) {
+      return `This mobile number is already being worked on by ${ownerName}. You cannot create a duplicate.`;
+    }
+    return "A lead with this mobile number already exists and is managed by another team member. You cannot create a duplicate.";
+  }
+
+  private async resolveOwnerName(ownerId: string): Promise<string | undefined> {
+    if (!ownerId || !Types.ObjectId.isValid(ownerId)) return undefined;
+    const user = await this.userModel.findById(ownerId).select("name").lean().exec();
+    const name = String((user as { name?: string } | null)?.name ?? "").trim();
+    return name || undefined;
+  }
 
   async createOrFind(
     createLeadDto: CreateLeadDto,
@@ -86,9 +102,12 @@ export class LeadsService {
           leadId: String(existing._id),
         });
       }
+      const ownerName = await this.resolveOwnerName(
+        String((existing as any).createdBy ?? ""),
+      );
       throw new ConflictException({
-        message:
-          "A lead with this mobile number already exists. Each lead is managed by one team member; duplicates are not allowed.",
+        message: this.otherOwnerDuplicateMessage(ownerName),
+        ownerName,
       });
     };
 
@@ -270,6 +289,7 @@ export class LeadsService {
     status: "available" | "owned_by_self" | "owned_by_other";
     leadId?: string;
     leadName?: string;
+    ownerName?: string;
   }> {
     const existing = await this.findByMobileFlexible(mobile);
     if (!existing) {
@@ -279,18 +299,20 @@ export class LeadsService {
     const isOwner = ownerId === String(userId);
     const leadId = String(existing._id);
     const leadName = String((existing as any).name ?? "").trim() || undefined;
+    const ownerName = await this.resolveOwnerName(ownerId);
 
     if (role === "ADMIN") {
       return {
         status: isOwner ? "owned_by_self" : "owned_by_other",
         leadId,
         leadName,
+        ownerName,
       };
     }
     if (isOwner) {
-      return { status: "owned_by_self", leadId, leadName };
+      return { status: "owned_by_self", leadId, leadName, ownerName };
     }
-    return { status: "owned_by_other" };
+    return { status: "owned_by_other", ownerName };
   }
 
   /** Match stored mobile across format variants (same rules as duplicate check on create). */
